@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# install-rust
+
+# sure, I'll run whatever you send me directly into my shell,
+# what could possibly go wrong?
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
