@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# stop-haibi-chan
+
+cd ~/haibi-chan
+kill -9 "$(< haibi-chan.pid)"

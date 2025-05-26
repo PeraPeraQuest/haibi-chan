@@ -4,8 +4,11 @@
 export BIND_ADDRESS_AND_PORT="0.0.0.0:8000"
 export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/.../your.secret.webhook.here"
 export GITHUB_WEBHOOK_SECRET="your.github.webhook.secret.here"
+export SSL_CERT_PATH="/home/linuxuser/vultr/infra/nginx/certs/live/perapera.quest/fullchain.pem"
+export SSL_KEY_PATH="/home/linuxuser/vultr/infra/nginx/certs/live/perapera.quest/privkey.pem"
 
 TIMESTAMP=$(date +%s)
 
 cd ~/haibi-chan
 target/release/haibi-chan 1>haibi-${TIMESTAMP}.log.1 2>haibi-${TIMESTAMP}.log.2 &
+echo $! > haibi-chan.pid

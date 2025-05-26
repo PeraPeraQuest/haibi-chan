@@ -22,10 +22,12 @@ use axum::{
     response::IntoResponse,
     routing::post,
 };
+use axum_server::tls_rustls::RustlsConfig;
 use hmac::{Hmac, Mac};
 use reqwest::Client;
 use serde_json::json;
 use sha2::Sha256;
+use std::net::SocketAddr;
 use tokio::{process::Command, spawn};
 
 type HmacSha256 = Hmac<Sha256>;
@@ -50,6 +52,13 @@ async fn main() {
         github_secret,
     };
 
+    // Load SSL certificate into TLS configuration
+    let cert_path = std::env::var("SSL_CERT_PATH").expect("SSL_CERT_PATH must be set");
+    let key_path = std::env::var("SSL_KEY_PATH").expect("SSL_KEY_PATH must be set");
+    let tls = RustlsConfig::from_pem_file(cert_path, key_path)
+        .await
+        .unwrap();
+
     // Build the app with a shared secret
     let app = Router::new()
         .route("/webhook", post(handle_webhook))
@@ -57,12 +66,17 @@ async fn main() {
 
     // Bind the port we want to listen on for webhook requests
     let addr = std::env::var("BIND_ADDRESS_AND_PORT").expect("BIND_ADDRESS_AND_PORT must be set");
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    let socket_addr = listener.local_addr().unwrap();
+    let socket_addr: SocketAddr = addr.parse().unwrap();
+    // let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    // let socket_addr = listener.local_addr().unwrap();
     println!("Listening for GitHub package webhooks on {}", socket_addr);
 
     // Start the service
-    axum::serve(listener, app).await.unwrap();
+    // axum::serve(listener, app).await.unwrap();
+    axum_server::bind_rustls(socket_addr, tls)
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
 }
 
 async fn handle_webhook(
