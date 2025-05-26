@@ -25,9 +25,9 @@ use axum::{
 use axum_server::tls_rustls::RustlsConfig;
 use hmac::{Hmac, Mac};
 use reqwest::Client;
-use serde_json::json;
+use serde_json::{Value, json};
 use sha2::Sha256;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::SystemTime};
 use tokio::{process::Command, spawn};
 
 type HmacSha256 = Hmac<Sha256>;
@@ -42,11 +42,15 @@ struct HaibiChanState {
 
 #[tokio::main]
 async fn main() {
+    // Startup logging
+    println!("[{:?}] Haibi-chan starting up...", SystemTime::now());
+
     // Load secrets from environment
     let discord_webhook =
         std::env::var("DISCORD_WEBHOOK_URL").expect("DISCORD_WEBHOOK_URL must be set");
     let github_secret =
         std::env::var("GITHUB_WEBHOOK_SECRET").expect("GITHUB_WEBHOOK_SECRET must be set");
+    println!("[{:?}] Loaded environment secrets", SystemTime::now());
     let state = HaibiChanState {
         discord_webhook,
         github_secret,
@@ -57,76 +61,152 @@ async fn main() {
     let key_path = std::env::var("SSL_KEY_PATH").expect("SSL_KEY_PATH must be set");
     let tls = RustlsConfig::from_pem_file(cert_path, key_path)
         .await
-        .unwrap();
+        .expect("Failed to load TLS certificates");
+    println!("[{:?}] TLS configuration loaded", SystemTime::now());
 
-    // Build the app with a shared secret
+    // Build the app
     let app = Router::new()
         .route("/webhook", post(handle_webhook))
-        .with_state(state);
+        .with_state(state.clone());
 
-    // Bind the port we want to listen on for webhook requests
-    let addr = std::env::var("BIND_ADDRESS_AND_PORT").expect("BIND_ADDRESS_AND_PORT must be set");
-    let socket_addr: SocketAddr = addr.parse().unwrap();
-    // let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    // let socket_addr = listener.local_addr().unwrap();
-    println!("Listening for GitHub package webhooks on {}", socket_addr);
+    // Bind and serve
+    let addr: SocketAddr = std::env::var("BIND_ADDRESS_AND_PORT")
+        .unwrap()
+        .parse()
+        .unwrap();
+    println!(
+        "[{:?}] Listening for GitHub package webhooks on {}",
+        SystemTime::now(),
+        addr
+    );
 
-    // Start the service
-    // axum::serve(listener, app).await.unwrap();
-    axum_server::bind_rustls(socket_addr, tls)
+    axum_server::bind_rustls(addr, tls)
         .serve(app.into_make_service())
         .await
         .unwrap();
 }
 
+/// Handle GitHub package webhooks, only deploying when `latest` tag is published
 async fn handle_webhook(
     headers: HeaderMap,
     State(state): State<HaibiChanState>,
     payload: Bytes,
 ) -> impl IntoResponse {
-    let secret = state.github_secret;
-    let discord_webhook = state.discord_webhook;
-    // 1) Verify signature header
-    let signature = match headers.get("x-hub-signature-256") {
-        Some(sig) => sig.to_str().unwrap_or_default(),
-        None => return (StatusCode::UNAUTHORIZED, "Missing signature"),
-    };
+    // log the full webhook payload to stderr to cut down on noise on stdout
+    let now = SystemTime::now();
+    eprintln!(
+        "[{:?}] Received webhook payload: {}",
+        now,
+        String::from_utf8_lossy(&payload)
+    );
 
-    if !verify_signature(secret.as_bytes(), &payload, signature) {
-        return (StatusCode::UNAUTHORIZED, "Invalid signature");
+    // Verify signature
+    let signature = headers
+        .get("x-hub-signature-256")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    if signature.is_empty()
+        || !verify_signature(state.github_secret.as_bytes(), &payload, signature)
+    {
+        eprintln!("[{:?}] Invalid or missing signature: {}", now, signature);
+        return (StatusCode::UNAUTHORIZED, "Invalid or missing signature");
     }
+    println!("[{:?}] Signature verified successfully", SystemTime::now());
 
-    // 2) Check GitHub event type
-    if let Some(event) = headers.get("x-github-event").and_then(|v| v.to_str().ok()) {
-        if event == "package" {
-            let webhook_url = discord_webhook.clone();
+    // Only handle package events
+    let event_type = headers
+        .get("x-github-event")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    if event_type != "package" {
+        println!(
+            "[{:?}] Unsupported event type: {}",
+            SystemTime::now(),
+            event_type
+        );
+        return (StatusCode::BAD_REQUEST, "Unsupported event");
+    }
+    println!("[{:?}] Handling 'package' event", SystemTime::now());
 
-            // Spawn deploy + notify task
-            spawn(async move {
-                // Deploy steps
-                let _ = Command::new("sh")
-                    .arg("-c")
-                    .arg("docker compose up -d --pull always --no-deps --force-recreate game")
-                    .current_dir("/home/linuxuser/vultr/infra")
-                    .status()
-                    .await;
-
-                // Notify Discord
-                let client = Client::new();
-                let _ = client
-                    .post(&webhook_url)
-                    .json(&json!({
-                        "content": "🚀 Haibi-chan has deployed a new version of PeraPera Quest!"
-                    }))
-                    .send()
-                    .await;
-            });
-
-            return (StatusCode::OK, "Deploy and notification triggered");
+    // Parse JSON payload
+    let v: Value = match serde_json::from_slice(&payload) {
+        Ok(val) => val,
+        Err(err) => {
+            eprintln!(
+                "[{:?}] Failed to parse JSON payload: {:?}",
+                SystemTime::now(),
+                err
+            );
+            return (StatusCode::BAD_REQUEST, "Invalid JSON payload");
         }
-    }
+    };
+    println!("[{:?}] JSON payload parsed", SystemTime::now());
 
-    (StatusCode::BAD_REQUEST, "Unhandled event")
+    // Check action is 'published'
+    if v.get("action").and_then(Value::as_str) != Some("published") {
+        println!(
+            "[{:?}] Ignoring non-published action: {:?}",
+            SystemTime::now(),
+            v.get("action")
+        );
+        return (StatusCode::OK, "Ignoring non-published action");
+    }
+    println!("[{:?}] Action 'published' detected", SystemTime::now());
+
+    // Check tag name == "latest"
+    let tag_name = v
+        .pointer("/package/package_version/container_metadata/tag/name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if tag_name != "latest" {
+        println!(
+            "[{:?}] Ignoring non-latest tag: {}",
+            SystemTime::now(),
+            tag_name
+        );
+        return (StatusCode::OK, "Ignoring non-latest tag");
+    }
+    println!(
+        "[{:?}] 'latest' tag detected, triggering deploy",
+        SystemTime::now()
+    );
+
+    // Spawn deploy + notify
+    let webhook_url = state.discord_webhook.clone();
+    spawn(async move {
+        let start = SystemTime::now();
+        println!("[{:?}] Starting deployment process...", start);
+
+        // Deploy via docker-compose
+        match Command::new("sh")
+            .arg("-c")
+            .arg("docker compose up -d --pull always --no-deps --force-recreate game")
+            .current_dir("/home/linuxuser/vultr/infra")
+            .status()
+            .await
+        {
+            Ok(status) => println!(
+                "[{:?}] Deploy command finished with status: {:?}",
+                SystemTime::now(),
+                status
+            ),
+            Err(err) => eprintln!("[{:?}] Deploy command failed: {:?}", SystemTime::now(), err),
+        }
+
+        // Notify Discord
+        println!("[{:?}] Sending Discord notification...", SystemTime::now());
+        match Client::new()
+            .post(&webhook_url)
+            .json(&json!({"content": "🚀 Haibi-chan deployed the **latest** version of PeraPera Quest!"}))
+            .send()
+            .await
+        {
+            Ok(resp) => println!("[{:?}] Discord notification sent with status: {}", SystemTime::now(), resp.status()),
+            Err(err) => eprintln!("[{:?}] Failed to send Discord notification: {:?}", SystemTime::now(), err),
+        }
+    });
+
+    (StatusCode::OK, "Latest deployment triggered")
 }
 
 /// Verifies HMAC-SHA256 signature against the payload
@@ -136,7 +216,7 @@ fn verify_signature(secret: &[u8], payload: &[u8], signature: &str) -> bool {
         return false;
     }
     let expected = hex::decode(parts[1]).unwrap_or_default();
-    let mut mac = HmacSha256::new_from_slice(secret).expect("HMAC can take key of any size");
+    let mut mac = HmacSha256::new_from_slice(secret).unwrap();
     mac.update(payload);
     mac.verify_slice(&expected).is_ok()
 }
