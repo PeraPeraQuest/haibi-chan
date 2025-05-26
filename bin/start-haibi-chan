@@ -11,5 +11,5 @@ TIMESTAMP=$(date +%s)
 
 cd ~/haibi-chan
 cargo build --release
-target/release/haibi-chan 1>haibi-${TIMESTAMP}.log.1 2>haibi-${TIMESTAMP}.log.2 &
+cargo run --release 1>haibi-${TIMESTAMP}.log.1 2>haibi-${TIMESTAMP}.log.2 &
 echo $! > haibi-chan.pid
