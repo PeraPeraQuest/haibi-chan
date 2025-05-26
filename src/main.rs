@@ -197,7 +197,7 @@ async fn handle_webhook(
         println!("[{:?}] Sending Discord notification...", SystemTime::now());
         match Client::new()
             .post(&webhook_url)
-            .json(&json!({"content": "🚀 Haibi-chan deployed the **latest** version of PeraPera Quest!"}))
+            .json(&json!({"content": "Haibi-chan has deployed a new version of PeraPera Quest!"}))
             .send()
             .await
         {
