@@ -56,11 +56,10 @@ async fn main() {
         .with_state(state);
 
     // Bind the port we want to listen on for webhook requests
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8000")
-        .await
-        .unwrap();
-    let addr = listener.local_addr().unwrap();
-    println!("Listening for GitHub package webhooks on {}", addr);
+    let addr = std::env::var("BIND_ADDRESS_AND_PORT").expect("BIND_ADDRESS_AND_PORT must be set");
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let socket_addr = listener.local_addr().unwrap();
+    println!("Listening for GitHub package webhooks on {}", socket_addr);
 
     // Start the service
     axum::serve(listener, app).await.unwrap();

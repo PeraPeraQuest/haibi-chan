@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # start-haibi-chan
 
+export BIND_ADDRESS_AND_PORT="0.0.0.0:8000"
 export DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/.../your.secret.webhook.here"
 export GITHUB_WEBHOOK_SECRET="your.github.webhook.secret.here"
 
