@@ -201,8 +201,16 @@ async fn handle_webhook(
             .send()
             .await
         {
-            Ok(resp) => println!("[{:?}] Discord notification sent with status: {}", SystemTime::now(), resp.status()),
-            Err(err) => eprintln!("[{:?}] Failed to send Discord notification: {:?}", SystemTime::now(), err),
+            Ok(resp) => println!(
+                "[{:?}] Discord notification sent with status: {}",
+                SystemTime::now(),
+                resp.status()
+            ),
+            Err(err) => eprintln!(
+                "[{:?}] Failed to send Discord notification: {:?}",
+                SystemTime::now(),
+                err
+            ),
         }
     });
 
