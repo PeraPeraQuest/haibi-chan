@@ -32,22 +32,22 @@ type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone)]
 struct HaibiChanState {
-    /// the secret we use to verify that GitHub is calling our service and not some evil leet haxor
-    github_secret: String,
     /// the URL we use to report our actions to our channel on Discord
     discord_webhook: String,
+    /// the secret we use to verify that GitHub is calling our service and not some evil leet haxor
+    github_secret: String,
 }
 
 #[tokio::main]
 async fn main() {
     // Load secrets from environment
-    let github_secret =
-        std::env::var("GITHUB_WEBHOOK_SECRET").expect("GITHUB_WEBHOOK_SECRET must be set");
     let discord_webhook =
         std::env::var("DISCORD_WEBHOOK_URL").expect("DISCORD_WEBHOOK_URL must be set");
+    let github_secret =
+        std::env::var("GITHUB_WEBHOOK_SECRET").expect("GITHUB_WEBHOOK_SECRET must be set");
     let state = HaibiChanState {
-        github_secret,
         discord_webhook,
+        github_secret,
     };
 
     // Build the app with a shared secret
