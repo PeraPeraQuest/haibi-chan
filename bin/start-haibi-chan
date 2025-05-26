@@ -10,5 +10,6 @@ export SSL_KEY_PATH="/home/linuxuser/vultr/infra/nginx/certs/live/perapera.quest
 TIMESTAMP=$(date +%s)
 
 cd ~/haibi-chan
+cargo build --release
 target/release/haibi-chan 1>haibi-${TIMESTAMP}.log.1 2>haibi-${TIMESTAMP}.log.2 &
 echo $! > haibi-chan.pid
